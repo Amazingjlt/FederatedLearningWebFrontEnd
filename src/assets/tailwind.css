@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: #0B1E39;
+    --color-accent: #76B900;
+    --color-secondary: #1E293B;
+    --color-dark: #0F172A;
+    --color-dark-light: #1E293B;
+    --color-gray-custom: #64748B;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-dark text-gray-200;
+    font-family: 'Inter', 'Roboto', 'IBM Plex Sans', sans-serif;
+  }
+}
+
+@layer components {
+  .content-auto {
+    content-visibility: auto;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-secondary transition-all duration-200 cursor-pointer;
+  }
+
+  .sidebar-item i {
+    @apply w-5 h-5;
+  }
+
+  .active-menu {
+    @apply bg-secondary text-accent relative;
+  }
+
+  .active-menu::before {
+    content: '';
+    @apply absolute left-0 top-0 h-full w-1 bg-accent;
+  }
+
+  .status-indicator {
+    @apply w-2 h-2 rounded-full inline-block mr-2;
+  }
+
+  .status-online {
+    @apply bg-accent;
+  }
+
+  .status-warning {
+    @apply bg-yellow-500;
+  }
+
+  .status-offline {
+    @apply bg-red-500;
+  }
+
+  .status-running {
+    @apply bg-accent;
+  }
+
+  .status-completed {
+    @apply bg-blue-500;
+  }
+
+  .status-failed {
+    @apply bg-red-500;
+  }
+
+  .status-pending {
+    @apply bg-yellow-500;
+  }
+
+  .log-viewer {
+    @apply bg-dark-light text-sm p-3 rounded-lg text-gray-300 font-mono;
+  }
+
+  .log-line {
+    @apply mb-1;
+  }
+
+  .progress-ring-circle {
+    transition: stroke-dashoffset 0.35s;
+  }
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-secondary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gray-custom);
+}
+
+/* 动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+/* 加载动画 */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
