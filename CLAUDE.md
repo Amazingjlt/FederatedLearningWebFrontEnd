@@ -14,6 +14,17 @@ npm run build    # Production build to dist/
 npm run preview  # Preview production build locally
 ```
 
+## env documents
+1. 我该怎么运行前端？
+依然和以前一样，直接在终端输入：
+```bash
+npm run dev
+```
+发生了什么？
+当你运行 npm run dev 时，Vite 默认处于 development (开发) 模式。它会自动读取 .env.development 里的配置。
+如果里面写着 VITE_USE_MOCK = true，你的 main.js 就会加载 Mock 逻辑。
+如果里面写着 VITE_USE_MOCK = false，你的 main.js 就不加载 Mock，而是通过 vite.config.js 的代理去连
+
 ## Architecture
 
 ### Directory Structure
