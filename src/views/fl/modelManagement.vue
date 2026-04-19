@@ -17,7 +17,7 @@
             <i class="fas fa-chart-line"></i>
             <span>比较模型</span>
           </button>
-          <button class="btn-primary">
+          <button @click="openUploadModal" class="btn-primary">
             <i class="fas fa-plus"></i>
             <span>上传模型</span>
           </button>
@@ -360,18 +360,120 @@
         </div>
       </div>
     </div>
+
+    <!-- Upload Model Modal -->
+    <div
+      v-if="showUploadModal"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      @click.self="showUploadModal = false"
+    >
+      <div class="bg-secondary rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-5 border-b border-gray-700 flex items-center justify-between">
+          <h2 class="text-xl font-bold text-white">上传模型</h2>
+          <button @click="showUploadModal = false" class="text-gray-400 hover:text-white">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-4">
+          <div>
+            <label class="block text-sm text-gray-300 mb-1">模型名称</label>
+            <input
+              v-model="uploadForm.name"
+              type="text"
+              placeholder="默认使用文件名"
+              class="w-full bg-primary border border-gray-600 rounded-md py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-gray-300 mb-1">关联作业ID</label>
+              <input
+                v-model="uploadForm.job_id"
+                type="text"
+                placeholder="例如: FL-JOB-2023-0589"
+                class="w-full bg-primary border border-gray-600 rounded-md py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-300 mb-1">框架</label>
+              <select
+                v-model="uploadForm.framework"
+                class="w-full bg-primary border border-gray-600 rounded-md py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                <option value="PyTorch">PyTorch</option>
+                <option value="TensorFlow">TensorFlow</option>
+                <option value="ONNX">ONNX</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm text-gray-300 mb-1">模型架构</label>
+            <input
+              v-model="uploadForm.architecture"
+              type="text"
+              placeholder="例如: ResNet-50"
+              class="w-full bg-primary border border-gray-600 rounded-md py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm text-gray-300 mb-1">模型文件 *</label>
+            <input
+              type="file"
+              accept=".pth,.pt,.ckpt,.onnx,.h5,.bin"
+              @change="handleFileChange"
+              class="w-full bg-primary border border-gray-600 rounded-md py-2 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-accent file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-accent file:text-white"
+            />
+            <p v-if="uploadFile" class="text-xs text-gray-400 mt-2">
+              已选择: {{ uploadFile.name }} ({{ formatFileSize(uploadFile.size) }})
+            </p>
+          </div>
+        </div>
+        <div class="p-5 border-t border-gray-700 flex justify-end gap-3">
+          <button
+            @click="showUploadModal = false"
+            class="btn-outline"
+            :disabled="uploading"
+          >
+            取消
+          </button>
+          <button
+            @click="submitUploadModel"
+            class="btn-primary"
+            :disabled="uploading || !uploadFile"
+            :class="{ 'opacity-50 cursor-not-allowed': uploading || !uploadFile }"
+          >
+            <i class="fas fa-upload"></i>
+            <span>{{ uploading ? '上传中...' : '开始上传' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import * as echarts from 'echarts'
+import { uploadModel } from '@/api/modelManagement'
 
 const searchQuery = ref('')
 const filterType = ref('')
 const viewMode = ref('grid')
 const selectedModels = ref([])
 const showCompareModal = ref(false)
+const showUploadModal = ref(false)
+const uploading = ref(false)
+const uploadFile = ref(null)
+const uploadForm = ref({
+  name: '',
+  job_id: '',
+  framework: 'PyTorch',
+  architecture: ''
+})
 
 const models = ref([
   {
@@ -430,6 +532,66 @@ const toggleSelectAll = () => {
     selectedModels.value = []
   } else {
     selectedModels.value = filteredModels.value.slice(0, 2).map((m) => m.id)
+  }
+}
+
+const openUploadModal = () => {
+  uploadForm.value = {
+    name: '',
+    job_id: '',
+    framework: 'PyTorch',
+    architecture: ''
+  }
+  uploadFile.value = null
+  showUploadModal.value = true
+}
+
+const handleFileChange = (event) => {
+  const [file] = event.target.files || []
+  uploadFile.value = file || null
+}
+
+const formatFileSize = (size) => {
+  if (!size && size !== 0) return '-'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
+  return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`
+}
+
+const submitUploadModel = async () => {
+  if (!uploadFile.value) {
+    alert('请先选择模型文件')
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('file', uploadFile.value)
+  if (uploadForm.value.name) formData.append('name', uploadForm.value.name)
+  if (uploadForm.value.job_id) formData.append('job_id', uploadForm.value.job_id)
+  if (uploadForm.value.framework) formData.append('framework', uploadForm.value.framework)
+  if (uploadForm.value.architecture) formData.append('architecture', uploadForm.value.architecture)
+
+  try {
+    uploading.value = true
+    const res = await uploadModel(formData)
+    const createdModel = {
+      id: res.data.modelId,
+      name: res.data.name || uploadForm.value.name || uploadFile.value.name,
+      jobId: res.data.jobId || uploadForm.value.job_id || '-',
+      accuracy: 0,
+      loss: 0,
+      createdAt: res.data.createdAt || new Date().toLocaleString(),
+      framework: res.data.framework || uploadForm.value.framework || '-'
+    }
+
+    models.value = [createdModel, ...models.value]
+    showUploadModal.value = false
+    alert('模型上传成功')
+  } catch (error) {
+    alert(error?.message || '模型上传失败，请稍后重试')
+  } finally {
+    uploading.value = false
   }
 }
 

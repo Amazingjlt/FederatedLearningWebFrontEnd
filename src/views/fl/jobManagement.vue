@@ -553,7 +553,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import * as echarts from 'echarts'
-import { getJobList } from '@/api/jobManagement'
+import { getJobList, createJob } from '@/api/jobManagement'
 
 // 状态管理
 const searchQuery = ref('')
@@ -735,9 +735,50 @@ const abortJob = (jobId) => {
 }
 
 const submitNewJob = () => {
-  console.log('提交新作业:', newJob.value)
-  showNewJobModal.value = false
-  // 这里调用API提交作业
+  const algorithmMap = {
+    FedAvg: 'FedAvg算法',
+    FedProx: 'FedProx算法',
+    FedOpt: 'FedOpt算法'
+  }
+
+  const payload = {
+    name: newJob.value.name,
+    description: newJob.value.description,
+    jobType: 'custom',
+    algorithm: algorithmMap[newJob.value.algorithm] || 'FedAvg算法',
+    totalRounds: Number(newJob.value.numRounds) || 10,
+    config: {
+      modelArchitecture: 'ResNet-50',
+      framework: 'PyTorch',
+      dataset: 'Mock Dataset',
+      batchSize: Number(newJob.value.batchSize) || 32,
+      learningRate: 0.001,
+      optimizer: 'Adam',
+      lossFunction: 'CrossEntropy',
+      clients: Number(newJob.value.numClients) || 5,
+      minClients: 2,
+      maxClients: Number(newJob.value.numClients) || 5,
+      secureComm: !!newJob.value.enableSSL,
+      secureAgg: !!newJob.value.enableSecureAgg,
+      differentialPrivacy: false,
+      clientFraction: 1.0,
+      localEpochs: 5,
+      scheduler: 'random',
+      compression: null
+    },
+    clientIds: []
+  }
+
+  createJob(payload)
+    .then((res) => {
+      if (res.code === 200) {
+        showNewJobModal.value = false
+        loadJobList()
+      }
+    })
+    .catch((error) => {
+      alert(error?.message || '创建作业失败，请稍后重试')
+    })
 }
 
 const initCharts = () => {
@@ -823,9 +864,7 @@ const initCharts = () => {
   })
 }
 
-// 生命周期
-onMounted(() => {
-  // 加载作业列表
+const loadJobList = () => {
   getJobList(currentPage.value, pageSize.value, {
     status: statusFilter.value
   }).then((res) => {
@@ -834,6 +873,12 @@ onMounted(() => {
       totalJobs.value = res.data.total
     }
   })
+}
+
+// 生命周期
+onMounted(() => {
+  // 加载作业列表
+  loadJobList()
 })
 </script>
 

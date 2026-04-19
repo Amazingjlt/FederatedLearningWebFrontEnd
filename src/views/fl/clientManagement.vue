@@ -106,19 +106,23 @@
 
       <div class="px-6 py-4 border-t border-gray-700 flex justify-between items-center">
         <div class="text-sm text-gray-400">
-          显示 <span class="text-white font-medium">1</span> 至
-          <span class="text-white font-medium">{{ filteredClients.length }}</span> 共
+          显示 <span class="text-white font-medium">{{ pageStart }}</span> 至
+          <span class="text-white font-medium">{{ pageEnd }}</span> 共
           <span class="text-white font-medium">{{ totalClients }}</span> 个客户端
         </div>
         <div class="flex space-x-2">
           <button
+            @click="goPrevPage"
             class="px-3 py-1 border border-gray-600 rounded-md text-sm bg-primary/30 hover:bg-primary/50 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled
+            :disabled="currentPage <= 1"
           >
             上一页
           </button>
           <button
+            @click="goNextPage"
             class="px-3 py-1 border border-gray-600 rounded-md text-sm bg-primary/30 hover:bg-primary/50"
+            :class="{ 'disabled:opacity-50 disabled:cursor-not-allowed': currentPage >= totalPages }"
+            :disabled="currentPage >= totalPages"
           >
             下一页
           </button>
@@ -468,13 +472,15 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import * as echarts from 'echarts'
-import { getClientList } from '@/api/clientManagement'
+import { getClientList, addClient } from '@/api/clientManagement'
 
 const searchQuery = ref('')
 const showAddClientModal = ref(false)
 const showClientDetailModal = ref(false)
 const selectedClient = ref(null)
 const totalClients = ref(24)
+const currentPage = ref(1)
+const pageSize = ref(10)
 const clientPerformanceChart = ref(null)
 
 const clients = ref([
@@ -565,12 +571,43 @@ const newClient = ref({
   }
 })
 
+const resetNewClientForm = () => {
+  newClient.value = {
+    id: '',
+    name: '',
+    description: '',
+    ipAddress: '',
+    port: '',
+    authKey: '',
+    permissions: {
+      training: true,
+      modelDownload: true,
+      dataSharing: false,
+      monitoring: true
+    }
+  }
+}
+
 const filteredClients = computed(() => {
   if (!searchQuery.value) return clients.value
   return clients.value.filter(
     (client) =>
       client.name.includes(searchQuery.value) || client.id.includes(searchQuery.value)
   )
+})
+
+const totalPages = computed(() => {
+  return Math.max(1, Math.ceil(totalClients.value / pageSize.value))
+})
+
+const pageStart = computed(() => {
+  if (totalClients.value === 0) return 0
+  return (currentPage.value - 1) * pageSize.value + 1
+})
+
+const pageEnd = computed(() => {
+  if (totalClients.value === 0) return 0
+  return Math.min(currentPage.value * pageSize.value, totalClients.value)
 })
 
 const getStatusClass = (status) => {
@@ -610,10 +647,49 @@ const viewClientDetail = (client) => {
   }, 100)
 }
 
+const loadClientList = () => {
+  getClientList(currentPage.value, pageSize.value, {}).then((res) => {
+    if (res.code === 200) {
+      clients.value = res.data.records
+      totalClients.value = res.data.total
+    }
+  })
+}
+
+const goPrevPage = () => {
+  if (currentPage.value <= 1) return
+  currentPage.value -= 1
+  loadClientList()
+}
+
+const goNextPage = () => {
+  if (currentPage.value >= totalPages.value) return
+  currentPage.value += 1
+  loadClientList()
+}
+
 const submitAddClient = () => {
-  console.log('添加客户端:', newClient.value)
-  showAddClientModal.value = false
-  // 这里调用API添加客户端
+  const payload = {
+    id: newClient.value.id,
+    name: newClient.value.name,
+    description: newClient.value.description,
+    ipAddress: newClient.value.ipAddress,
+    port: Number(newClient.value.port),
+    authKey: newClient.value.authKey,
+    permissions: newClient.value.permissions
+  }
+
+  addClient(payload)
+    .then((res) => {
+      if (res.code === 200) {
+        showAddClientModal.value = false
+        resetNewClientForm()
+        loadClientList()
+      }
+    })
+    .catch((error) => {
+      alert(error?.message || '添加客户端失败，请稍后重试')
+    })
 }
 
 const deleteClient = (clientId) => {
@@ -678,12 +754,7 @@ const initPerformanceChart = () => {
 
 onMounted(() => {
   // 加载客户端列表
-  getClientList(1, 10, {}).then((res) => {
-    if (res.code === 200) {
-      clients.value = res.data.records
-      totalClients.value = res.data.total
-    }
-  })
+  loadClientList()
 })
 </script>
 

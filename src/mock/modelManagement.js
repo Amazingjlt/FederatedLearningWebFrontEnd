@@ -108,6 +108,22 @@ const modelComparisonResponse = {
   }
 }
 
+// 上传模型响应
+const uploadModelResponse = {
+  code: 200,
+  message: '模型上传成功',
+  data: {
+    modelId: 'model-5',
+    status: 'uploaded',
+    name: 'New Uploaded Model',
+    jobId: 'FL-JOB-2023-0601',
+    framework: 'PyTorch',
+    architecture: 'ResNet-50',
+    fileName: 'uploaded_model.pth',
+    createdAt: '2023-06-20 10:30'
+  }
+}
+
 // Mock接口
 Mock.mock(`${http}/model/list`, 'post', (options) => {
   const params = JSON.parse(options.body)
@@ -139,8 +155,67 @@ Mock.mock(`${http}/model/comparison`, 'post', () => {
   return modelComparisonResponse
 })
 
+Mock.mock(`${http}/model/upload`, 'post', (options) => {
+  let formData = {}
+  if (options.body && typeof options.body.get === 'function') {
+    formData = {
+      name: options.body.get('name'),
+      job_id: options.body.get('job_id'),
+      framework: options.body.get('framework'),
+      architecture: options.body.get('architecture'),
+      file: options.body.get('file')
+    }
+  } else if (typeof options.body === 'string') {
+    try {
+      formData = JSON.parse(options.body)
+    } catch (e) {
+      formData = {}
+    }
+  }
+
+  if (!formData.file) {
+    return {
+      code: 400,
+      message: '缺少模型文件，请上传 file 字段',
+      data: null
+    }
+  }
+
+  const modelId = `model-${modelListResponse.data.records.length + 1}`
+  const createdAt = Mock.Random.datetime('yyyy-MM-dd HH:mm')
+  const newRecord = {
+    id: modelId,
+    name: formData.name || uploadModelResponse.data.name,
+    jobId: formData.job_id || '',
+    accuracy: 0,
+    loss: 0,
+    createdAt,
+    framework: formData.framework || 'PyTorch',
+    parameters: '-',
+    size: `${(((formData.file && formData.file.size) || 0) / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  modelListResponse.data.records.unshift(newRecord)
+  modelListResponse.data.total = modelListResponse.data.records.length
+
+  return {
+    ...uploadModelResponse,
+    data: {
+      ...uploadModelResponse.data,
+      modelId,
+      name: newRecord.name,
+      jobId: formData.job_id || '',
+      framework: formData.framework || 'PyTorch',
+      architecture: formData.architecture || 'ResNet-50',
+      fileName: formData.file?.name || uploadModelResponse.data.fileName,
+      createdAt
+    }
+  }
+})
+
 export default {
   modelListResponse,
   modelDetailResponse,
-  modelComparisonResponse
+  modelComparisonResponse,
+  uploadModelResponse
 }

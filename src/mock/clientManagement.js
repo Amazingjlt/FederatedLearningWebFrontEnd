@@ -189,8 +189,36 @@ Mock.mock(new RegExp(`${http}/client/detail/.*`), 'get', () => {
   return clientDetailResponse
 })
 
-Mock.mock(`${http}/client/add`, 'post', () => {
-  return addClientResponse
+Mock.mock(`${http}/client/add`, 'post', (options) => {
+  const params = options.body ? JSON.parse(options.body) : {}
+  const records = clientListResponse.data.records
+
+  const autoId = `FL-CLIENT-${String(records.length + 1).padStart(3, '0')}`
+  const newClient = {
+    id: params.id || autoId,
+    name: params.name || `客户端-${records.length + 1}`,
+    status: 'offline',
+    connectedAt: '-',
+    jobCount: 0,
+    gpu: params.gpu || '-',
+    cpu: params.cpu || '-',
+    memory: params.memory || '-',
+    os: params.os || '-',
+    ipAddress: params.ipAddress || '-',
+    port: params.port || '-',
+    deviceType: params.deviceType || 'Edge Server'
+  }
+
+  records.unshift(newClient)
+  clientListResponse.data.total = records.length
+
+  return {
+    ...addClientResponse,
+    data: {
+      clientId: newClient.id,
+      status: 'pending'
+    }
+  }
 })
 
 Mock.mock(new RegExp(`${http}/client/delete/.*`), 'post', () => {
