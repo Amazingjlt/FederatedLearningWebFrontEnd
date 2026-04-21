@@ -221,7 +221,51 @@ Mock.mock(`${http}/client/add`, 'post', (options) => {
   }
 })
 
-Mock.mock(new RegExp(`${http}/client/delete/.*`), 'post', () => {
+Mock.mock(new RegExp(`${http}/client/update/.*`), 'post', (options) => {
+  const clientId = options.url.split('/').pop()
+  const params = options.body ? JSON.parse(options.body) : {}
+  const target = clientListResponse.data.records.find((c) => c.id === clientId)
+  if (!target) {
+    return {
+      code: 404,
+      message: 'Client not found',
+      data: null
+    }
+  }
+
+  target.name = params.name || target.name
+  target.ipAddress = params.ipAddress || target.ipAddress
+  target.port = params.port || target.port
+  target.deviceType = params.deviceType || target.deviceType
+  target.gpu = params.gpu || target.gpu
+  target.cpu = params.cpu || target.cpu
+  target.memory = params.memory || target.memory
+  target.os = params.os || target.os
+
+  return {
+    code: 200,
+    message: '客户端更新成功',
+    data: {
+      clientId,
+      status: 'updated'
+    }
+  }
+})
+
+Mock.mock(new RegExp(`${http}/client/delete/.*`), 'post', (options) => {
+  const clientId = options.url.split('/').pop()
+  const records = clientListResponse.data.records
+  const index = records.findIndex((c) => c.id === clientId)
+  if (index === -1) {
+    return {
+      code: 404,
+      message: 'Client not found',
+      data: null
+    }
+  }
+
+  records.splice(index, 1)
+  clientListResponse.data.total = records.length
   return deleteClientResponse
 })
 

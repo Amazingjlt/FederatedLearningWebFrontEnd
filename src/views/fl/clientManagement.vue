@@ -7,7 +7,7 @@
         <p class="text-gray-400 mt-1">管理和监控所有联邦学习客户端</p>
       </div>
       <button
-        @click="showAddClientModal = true"
+        @click="openAddClientModal"
         class="bg-accent hover:bg-accent/90 text-white font-medium py-2 px-4 rounded-md flex items-center gap-2 transition-all duration-200 shadow-lg hover:shadow-accent/20"
       >
         <i class="fas fa-plus"></i>
@@ -89,7 +89,10 @@
                 >
                   查看
                 </button>
-                <button class="text-gray-400 hover:text-gray-300 mr-4">
+                <button
+                  @click="openEditClientModal(client)"
+                  class="text-gray-400 hover:text-gray-300 mr-4"
+                >
                   编辑
                 </button>
                 <button
@@ -138,7 +141,7 @@
     >
       <div class="bg-secondary rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all">
         <div class="p-5 border-b border-gray-700 flex justify-between items-center">
-          <h3 class="text-xl font-semibold">添加新客户端</h3>
+          <h3 class="text-xl font-semibold">{{ isEditMode ? '编辑客户端' : '添加新客户端' }}</h3>
           <button
             @click="showAddClientModal = false"
             class="text-gray-400 hover:text-white"
@@ -155,6 +158,7 @@
                   type="text"
                   v-model="newClient.id"
                   required
+                  :disabled="isEditMode"
                   class="w-full bg-primary border border-gray-600 rounded-md py-2 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
                   placeholder="Enter client ID"
                 />
@@ -260,7 +264,7 @@
             @click="submitAddClient"
             class="px-4 py-2 bg-accent text-white rounded-md text-sm hover:bg-accent/90"
           >
-            添加客户端
+            {{ isEditMode ? '保存修改' : '添加客户端' }}
           </button>
         </div>
       </div>
@@ -390,7 +394,7 @@
                 <!-- Performance Chart -->
                 <div class="mt-6">
                   <h5 class="text-sm font-medium mb-2">Performance Metrics</h5>
-                  <div ref="clientPerformanceChart" class="w-full h-40"></div>
+                  <div ref="clientPerformanceChart" class="w-full h-56"></div>
                 </div>
               </div>
             </div>
@@ -472,7 +476,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import * as echarts from 'echarts'
-import { getClientList, addClient } from '@/api/clientManagement'
+import { getClientList, addClient, updateClient, deleteClient as deleteClientApi } from '@/api/clientManagement'
 
 const searchQuery = ref('')
 const showAddClientModal = ref(false)
@@ -482,6 +486,8 @@ const totalClients = ref(24)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const clientPerformanceChart = ref(null)
+const isEditMode = ref(false)
+const editingClientId = ref('')
 
 const clients = ref([
   {
@@ -588,6 +594,33 @@ const resetNewClientForm = () => {
   }
 }
 
+const openAddClientModal = () => {
+  isEditMode.value = false
+  editingClientId.value = ''
+  resetNewClientForm()
+  showAddClientModal.value = true
+}
+
+const openEditClientModal = (client) => {
+  isEditMode.value = true
+  editingClientId.value = client.id
+  newClient.value = {
+    id: client.id,
+    name: client.name || '',
+    description: '',
+    ipAddress: client.ipAddress || '',
+    port: client.port || '',
+    authKey: '',
+    permissions: {
+      training: true,
+      modelDownload: true,
+      dataSharing: false,
+      monitoring: true
+    }
+  }
+  showAddClientModal.value = true
+}
+
 const filteredClients = computed(() => {
   if (!searchQuery.value) return clients.value
   return clients.value.filter(
@@ -670,32 +703,45 @@ const goNextPage = () => {
 
 const submitAddClient = () => {
   const payload = {
-    id: newClient.value.id,
     name: newClient.value.name,
-    description: newClient.value.description,
+    deviceType: 'Edge Server',
     ipAddress: newClient.value.ipAddress,
     port: Number(newClient.value.port),
-    authKey: newClient.value.authKey,
-    permissions: newClient.value.permissions
+    fedlbePort: Number(newClient.value.port),
+    gpu: null,
+    cpu: null,
+    memory: null,
+    os: null
   }
 
-  addClient(payload)
-    .then((res) => {
-      if (res.code === 200) {
-        showAddClientModal.value = false
-        resetNewClientForm()
-        loadClientList()
-      }
-    })
-    .catch((error) => {
-      alert(error?.message || '添加客户端失败，请稍后重试')
-    })
+  const request = isEditMode.value
+    ? updateClient(editingClientId.value, payload)
+    : addClient(payload)
+
+  request.then((res) => {
+    if (res.code === 200) {
+      showAddClientModal.value = false
+      resetNewClientForm()
+      isEditMode.value = false
+      editingClientId.value = ''
+      loadClientList()
+    }
+  }).catch((error) => {
+    alert(error?.message || (isEditMode.value ? '更新客户端失败，请稍后重试' : '添加客户端失败，请稍后重试'))
+  })
 }
 
 const deleteClient = (clientId) => {
   if (confirm('确定要删除此客户端吗？')) {
-    console.log('删除客户端:', clientId)
-    // 这里调用API删除客户端
+    deleteClientApi(clientId)
+      .then((res) => {
+        if (res.code === 200) {
+          loadClientList()
+        }
+      })
+      .catch((error) => {
+        alert(error?.message || '删除客户端失败，请稍后重试')
+      })
   }
 }
 
@@ -712,7 +758,7 @@ const initPerformanceChart = () => {
     grid: {
       left: '3%',
       right: '4%',
-      bottom: '3%',
+      bottom: 56,
       containLabel: true
     },
     xAxis: {
@@ -745,7 +791,7 @@ const initPerformanceChart = () => {
     legend: {
       data: ['Training Time (s)', 'Data Transfer (MB)'],
       textStyle: { color: '#9CA3AF', fontSize: 10 },
-      bottom: 0
+      bottom: 10
     }
   })
 

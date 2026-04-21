@@ -213,6 +213,116 @@ Mock.mock(`${http}/model/upload`, 'post', (options) => {
   }
 })
 
+Mock.mock(new RegExp(`${http}/model/validate/.*`), 'post', (options) => {
+  const id = options.url.split('/').pop()
+  const model = modelListResponse.data.records.find((m) => String(m.id) === String(id))
+
+  if (!model) {
+    return {
+      code: 404,
+      message: '模型不存在',
+      data: null
+    }
+  }
+
+  const accuracy = Number(model.accuracy || 0)
+  const loss = Number(model.loss || 0)
+  const precision = Number((Math.max(0, accuracy - 1.2)).toFixed(2))
+  const recall = Number((Math.max(0, accuracy - 1.8)).toFixed(2))
+  const f1 = Number(((2 * precision * recall) / Math.max(precision + recall, 1e-6)).toFixed(2))
+  const thresholds = {
+    minAccuracy: 85,
+    maxLoss: 0.5,
+    minPrecision: 84,
+    minRecall: 83,
+    minF1: 83.5
+  }
+  const checks = {
+    loadable: true,
+    inferenceOk: true,
+    ioShapeOk: true,
+    noNaN: true,
+    noCrash: true
+  }
+
+  const metricPass = {
+    accuracy: accuracy >= thresholds.minAccuracy,
+    loss: loss <= thresholds.maxLoss,
+    precision: precision >= thresholds.minPrecision,
+    recall: recall >= thresholds.minRecall,
+    f1: f1 >= thresholds.minF1
+  }
+
+  const passed = Object.values(checks).every(Boolean) && Object.values(metricPass).every(Boolean)
+
+  return {
+    code: 200,
+    message: '验证完成',
+    data: {
+      modelId: model.id,
+      modelName: model.name,
+      status: passed ? 'passed' : 'failed',
+      score: accuracy,
+      validatedAt: Mock.Random.datetime('yyyy-MM-dd HH:mm:ss'),
+      checks,
+      metrics: {
+        accuracy,
+        loss,
+        precision,
+        recall,
+        f1,
+        latencyMs: Mock.Random.integer(18, 65),
+        throughputQps: Mock.Random.integer(42, 120)
+      },
+      thresholds,
+      metricPass,
+      decision: passed ? 'can_deploy' : 'need_retrain',
+      summary: passed
+        ? '模型可用且指标达标，允许部署或下载。'
+        : '模型可加载，但部分指标未达阈值，建议继续训练。'
+    }
+  }
+})
+
+Mock.mock(new RegExp(`${http}/model/delete/.*`), 'post', (options) => {
+  const id = options.url.split('/').pop()
+  const before = modelListResponse.data.records.length
+  modelListResponse.data.records = modelListResponse.data.records.filter(
+    (m) => String(m.id) !== String(id)
+  )
+  const after = modelListResponse.data.records.length
+  modelListResponse.data.total = after
+
+  if (after === before) {
+    return {
+      code: 404,
+      message: '模型不存在',
+      data: null
+    }
+  }
+
+  return {
+    code: 200,
+    message: '模型删除成功',
+    data: { id }
+  }
+})
+
+Mock.mock(new RegExp(`${http}/model/download/.*`), 'get', (options) => {
+  const id = options.url.split('/').pop()
+  const model = modelListResponse.data.records.find((m) => String(m.id) === String(id))
+
+  if (!model) {
+    return {
+      code: 404,
+      message: '模型不存在',
+      data: null
+    }
+  }
+
+  return `Mock model file for ${model.id} - ${model.name}`
+})
+
 export default {
   modelListResponse,
   modelDetailResponse,

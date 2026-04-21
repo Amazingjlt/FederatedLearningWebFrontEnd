@@ -144,16 +144,20 @@
             </div>
           </div>
           <div class="flex justify-between">
-            <button class="btn-outline text-xs py-1.5 px-3">
+            <button class="btn-outline text-xs py-1.5 px-3" @click="handleDownloadModel(model.id)">
               <i class="fas fa-download"></i>
               <span>下载</span>
             </button>
-            <button class="btn-outline text-xs py-1.5 px-3">
+            <button class="btn-outline text-xs py-1.5 px-3" @click="handleValidateModel(model.id)">
               <i class="fas fa-check-circle"></i>
               <span>验证</span>
             </button>
-            <button class="btn-outline text-xs py-1.5 px-3">
-              <i class="fas fa-ellipsis-v"></i>
+            <button
+              class="btn-outline text-xs py-1.5 px-3 hover:border-red-500 hover:text-red-400"
+              @click="handleDeleteModel(model.id)"
+            >
+              <i class="fas fa-trash"></i>
+              <span>删除</span>
             </button>
           </div>
         </div>
@@ -215,14 +219,23 @@
                 <button class="text-gray-400 hover:text-accent transition-colors">
                   <i class="fas fa-chart-line"></i>
                 </button>
-                <button class="text-gray-400 hover:text-accent transition-colors">
+                <button
+                  class="text-gray-400 hover:text-accent transition-colors"
+                  @click="handleDownloadModel(model.id)"
+                >
                   <i class="fas fa-download"></i>
                 </button>
-                <button class="text-gray-400 hover:text-accent transition-colors">
+                <button
+                  class="text-gray-400 hover:text-accent transition-colors"
+                  @click="handleValidateModel(model.id)"
+                >
                   <i class="fas fa-check-circle"></i>
                 </button>
-                <button class="text-gray-400 hover:text-accent transition-colors">
-                  <i class="fas fa-ellipsis-v"></i>
+                <button
+                  class="text-gray-400 hover:text-red-400 transition-colors"
+                  @click="handleDeleteModel(model.id)"
+                >
+                  <i class="fas fa-trash"></i>
                 </button>
               </div>
             </td>
@@ -353,7 +366,7 @@
         </div>
         <div class="p-5 border-t border-gray-700 flex justify-end gap-3">
           <button @click="showCompareModal = false" class="btn-outline">取消</button>
-          <button class="btn-primary">
+          <button @click="exportComparisonResult" class="btn-primary">
             <i class="fas fa-download"></i>
             <span>导出比较结果</span>
           </button>
@@ -456,9 +469,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { uploadModel } from '@/api/modelManagement'
+import { uploadModel, downloadModel, validateModel, deleteModel } from '@/api/modelManagement'
 
 const searchQuery = ref('')
 const filterType = ref('')
@@ -516,6 +529,7 @@ const models = ref([
 
 const modelComparisonChart = ref(null)
 const comparisonChartContainer = ref(null)
+const comparisonChartInstance = ref(null)
 
 const filteredModels = computed(() => {
   let filtered = models.value
@@ -533,6 +547,87 @@ const toggleSelectAll = () => {
   } else {
     selectedModels.value = filteredModels.value.slice(0, 2).map((m) => m.id)
   }
+}
+
+const initModalComparisonChart = () => {
+  if (!comparisonChartContainer.value) return
+
+  const selected = models.value.filter((m) => selectedModels.value.includes(m.id))
+  if (!selected.length) return
+
+  if (
+    !comparisonChartInstance.value ||
+    comparisonChartInstance.value.isDisposed?.() ||
+    comparisonChartInstance.value.getDom?.() !== comparisonChartContainer.value
+  ) {
+    if (comparisonChartInstance.value && !comparisonChartInstance.value.isDisposed?.()) {
+      comparisonChartInstance.value.dispose()
+    }
+    comparisonChartInstance.value = echarts.init(comparisonChartContainer.value)
+  }
+
+  const rounds = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6']
+  const baseAcc = [72, 78, 82, 85, 87, 89]
+  const baseLoss = [0.85, 0.72, 0.63, 0.55, 0.48, 0.42]
+  const colors = ['#76B900', '#3B82F6']
+
+  const series = []
+  selected.slice(0, 2).forEach((model, idx) => {
+    const accShift = (Number(model.accuracy) - 90) * 0.3
+    const lossShift = (0.3 - Number(model.loss || 0.3)) * 0.15
+    series.push({
+      name: `${model.name}-准确率`,
+      type: 'line',
+      smooth: true,
+      data: baseAcc.map((v) => Number((v + accShift).toFixed(2))),
+      lineStyle: { width: 2, color: colors[idx] },
+      itemStyle: { color: colors[idx] }
+    })
+    series.push({
+      name: `${model.name}-损失`,
+      type: 'line',
+      yAxisIndex: 1,
+      smooth: true,
+      data: baseLoss.map((v) => Number((v - lossShift).toFixed(3))),
+      lineStyle: { width: 2, type: 'dashed', color: colors[idx] },
+      itemStyle: { color: colors[idx] }
+    })
+  })
+
+  comparisonChartInstance.value.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis' },
+    legend: {
+      textStyle: { color: '#94a3b8', fontSize: 10 }
+    },
+    grid: { left: '3%', right: '4%', bottom: 56, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: rounds,
+      axisLine: { lineStyle: { color: '#334155' } },
+      axisLabel: { color: '#94a3b8' }
+    },
+    yAxis: [
+      {
+        type: 'value',
+        name: '准确率(%)',
+        min: 60,
+        max: 100,
+        axisLabel: { color: '#94a3b8' },
+        splitLine: { lineStyle: { color: '#334155' } }
+      },
+      {
+        type: 'value',
+        name: '损失',
+        min: 0.2,
+        max: 1.0,
+        position: 'right',
+        axisLabel: { color: '#94a3b8' },
+        splitLine: { show: false }
+      }
+    ],
+    series
+  })
 }
 
 const openUploadModal = () => {
@@ -593,6 +688,130 @@ const submitUploadModel = async () => {
   } finally {
     uploading.value = false
   }
+}
+
+const getFileNameFromHeaders = (headers, fallbackName) => {
+  const disposition = headers?.['content-disposition'] || headers?.['Content-Disposition']
+  if (!disposition) return fallbackName
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1])
+  const normalMatch = disposition.match(/filename="?([^";]+)"?/i)
+  if (normalMatch?.[1]) return normalMatch[1]
+  return fallbackName
+}
+
+const handleDownloadModel = async (modelId) => {
+  try {
+    const response = await downloadModel(modelId)
+    const fallbackName = `${modelId}.bin`
+    const fileName = getFileNameFromHeaders(response.headers, fallbackName)
+    const blob = response.data instanceof Blob
+      ? response.data
+      : new Blob([response.data], { type: 'application/octet-stream' })
+
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    alert('模型下载已开始')
+  } catch (error) {
+    alert(error?.message || '模型下载失败，请稍后重试')
+  }
+}
+
+const handleValidateModel = async (modelId) => {
+  try {
+    const res = await validateModel(modelId)
+    const data = res?.data || {}
+    const status = data.status || 'unknown'
+    const isPassed = status === 'passed' || status === 'success' || status === 'ok'
+    const checks = data.checks || {}
+    const metrics = data.metrics || {}
+    const thresholds = data.thresholds || {}
+    const metricPass = data.metricPass || {}
+
+    const boolTxt = (v) => (v ? '通过' : '未通过')
+    const lines = [
+      `验证结果: ${isPassed ? '通过' : '未通过'}`,
+      `模型: ${data.modelName || modelId}`,
+      `验证时间: ${data.validatedAt || '-'}`,
+      '',
+      '一、可用性检查',
+      `- 模型可加载: ${boolTxt(checks.loadable)}`,
+      `- 推理可执行: ${boolTxt(checks.inferenceOk)}`,
+      `- 输入输出维度正确: ${boolTxt(checks.ioShapeOk)}`,
+      `- 数值异常检查(NaN): ${boolTxt(checks.noNaN)}`,
+      `- 运行稳定性(无崩溃): ${boolTxt(checks.noCrash)}`,
+      '',
+      '二、性能指标',
+      `- Accuracy: ${metrics.accuracy ?? '-'}% (阈值 >= ${thresholds.minAccuracy ?? '-'}) ${boolTxt(metricPass.accuracy)}`,
+      `- Loss: ${metrics.loss ?? '-'} (阈值 <= ${thresholds.maxLoss ?? '-'}) ${boolTxt(metricPass.loss)}`,
+      `- Precision: ${metrics.precision ?? '-'}% (阈值 >= ${thresholds.minPrecision ?? '-'}) ${boolTxt(metricPass.precision)}`,
+      `- Recall: ${metrics.recall ?? '-'}% (阈值 >= ${thresholds.minRecall ?? '-'}) ${boolTxt(metricPass.recall)}`,
+      `- F1: ${metrics.f1 ?? '-'}% (阈值 >= ${thresholds.minF1 ?? '-'}) ${boolTxt(metricPass.f1)}`,
+      `- Latency: ${metrics.latencyMs ?? '-'} ms`,
+      `- Throughput: ${metrics.throughputQps ?? '-'} qps`,
+      '',
+      `三、结论: ${data.summary || (isPassed ? '模型可部署。' : '建议继续训练。')}`
+    ]
+
+    alert(lines.join('\n'))
+  } catch (error) {
+    alert(error?.message || '模型验证失败，请稍后重试')
+  }
+}
+
+const handleDeleteModel = async (modelId) => {
+  if (!window.confirm('确认删除该模型吗？删除后不可恢复。')) return
+
+  try {
+    await deleteModel(modelId)
+    models.value = models.value.filter((m) => m.id !== modelId)
+    selectedModels.value = selectedModels.value.filter((id) => id !== modelId)
+    alert('模型删除成功')
+  } catch (error) {
+    alert(error?.message || '模型删除失败，请稍后重试')
+  }
+}
+
+const exportComparisonResult = () => {
+  const selected = models.value.filter((m) => selectedModels.value.includes(m.id))
+  if (!selected.length) {
+    alert('请先选择要比较的模型')
+    return
+  }
+
+  const headers = ['modelId', 'name', 'jobId', 'accuracy', 'loss', 'framework', 'createdAt']
+  const lines = selected.map((m) => [
+    m.id,
+    m.name,
+    m.jobId || '',
+    m.accuracy ?? '',
+    m.loss ?? '',
+    m.framework || '',
+    m.createdAt || ''
+  ])
+
+  const csv = [headers, ...lines]
+    .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+  link.href = url
+  link.download = `model_comparison_${stamp}.csv`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }
 
 const initCharts = () => {
@@ -659,6 +878,28 @@ const initCharts = () => {
 
 onMounted(() => {
   initCharts()
+})
+
+watch(showCompareModal, (visible) => {
+  if (!visible) {
+    if (comparisonChartInstance.value && !comparisonChartInstance.value.isDisposed?.()) {
+      comparisonChartInstance.value.dispose()
+    }
+    comparisonChartInstance.value = null
+    return
+  }
+  nextTick(() => {
+    initModalComparisonChart()
+    comparisonChartInstance.value?.resize()
+  })
+})
+
+watch(selectedModels, () => {
+  if (!showCompareModal.value) return
+  nextTick(() => {
+    initModalComparisonChart()
+    comparisonChartInstance.value?.resize()
+  })
 })
 </script>
 

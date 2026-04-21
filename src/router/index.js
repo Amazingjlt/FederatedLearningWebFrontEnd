@@ -6,6 +6,12 @@ const routes = [
     redirect: '/fl/dashboard'
   },
   {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/login.vue'),
+    meta: { title: '登录', public: true }
+  },
+  {
     path: '/fl',
     name: 'Index',
     component: () => import('@/views/index.vue'),
@@ -62,6 +68,20 @@ router.beforeEach((to, from, next) => {
   if (to.meta.title) {
     document.title = `${to.meta.title} - 联邦学习平台`
   }
+
+  const token = localStorage.getItem('token')
+  const isPublic = Boolean(to.meta?.public)
+
+  if (!token && !isPublic) {
+    next('/login')
+    return
+  }
+
+  if (token && to.path === '/login') {
+    next('/fl/dashboard')
+    return
+  }
+
   next()
 })
 

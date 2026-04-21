@@ -294,15 +294,15 @@
         <div class="bg-secondary rounded-lg p-4 border border-gray-700">
           <div class="grid grid-cols-3 gap-2 text-center">
             <div class="p-3 bg-danger/20 rounded-lg border border-danger/30">
-              <p class="text-danger font-bold text-xl">{{ stats.criticalWarnings }}</p>
+              <p class="text-danger font-bold text-xl">{{ warningStats.critical }}</p>
               <p class="text-xs text-gray-300 mt-1">严重</p>
             </div>
             <div class="p-3 bg-warning/20 rounded-lg border border-warning/30">
-              <p class="text-warning font-bold text-xl">{{ stats.warnings }}</p>
+              <p class="text-warning font-bold text-xl">{{ warningStats.warning }}</p>
               <p class="text-xs text-gray-300 mt-1">警告</p>
             </div>
             <div class="p-3 bg-info/20 rounded-lg border border-info/30">
-              <p class="text-info font-bold text-xl">{{ stats.infoAlerts }}</p>
+              <p class="text-info font-bold text-xl">{{ warningStats.info }}</p>
               <p class="text-xs text-gray-300 mt-1">信息</p>
             </div>
           </div>
@@ -393,7 +393,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import 'echarts-gl'
 import {
@@ -416,6 +416,7 @@ const stats = ref({
 })
 
 // 节点数据
+const allNodes = ref([])
 const nodes = ref([])
 const selectedNode = ref(null)
 
@@ -438,6 +439,7 @@ const noiseRange = ref(10)
 // 图表实例
 let heatmap3dChart = null
 let distributionChart = null
+const distributionChartRef = ref(null)
 
 // 视图控制
 const autoRotate = ref(true)
@@ -451,9 +453,140 @@ const timeOptions = [
   { value: 'custom', label: '自定义' }
 ]
 
+const warningStats = computed(() => {
+  return warnings.value.reduce(
+    (acc, item) => {
+      if (item.type === 'critical') acc.critical += 1
+      else if (item.type === 'warning') acc.warning += 1
+      else if (item.type === 'info') acc.info += 1
+      return acc
+    },
+    { critical: 0, warning: 0, info: 0 }
+  )
+})
+
 // 辅助函数
 const formatNumber = (num) => {
   return new Intl.NumberFormat().format(num)
+}
+
+const getTimeWindowRange = () => {
+  const now = new Date()
+  const start = new Date(now)
+  const end = new Date(now)
+
+  if (selectedTimeWindow.value === 'today') {
+    start.setHours(0, 0, 0, 0)
+    end.setHours(23, 59, 59, 999)
+    return { start, end }
+  }
+
+  if (selectedTimeWindow.value === 'yesterday') {
+    start.setDate(start.getDate() - 1)
+    start.setHours(0, 0, 0, 0)
+    end.setDate(end.getDate() - 1)
+    end.setHours(23, 59, 59, 999)
+    return { start, end }
+  }
+
+  if (selectedTimeWindow.value === 'week') {
+    const day = now.getDay() || 7
+    start.setDate(now.getDate() - day + 1)
+    start.setHours(0, 0, 0, 0)
+    end.setHours(23, 59, 59, 999)
+    return { start, end }
+  }
+
+  if (selectedTimeWindow.value === 'month') {
+    start.setDate(1)
+    start.setHours(0, 0, 0, 0)
+    end.setHours(23, 59, 59, 999)
+    return { start, end }
+  }
+
+  if (selectedTimeWindow.value === 'custom' && customStartDate.value && customEndDate.value) {
+    const customStart = new Date(`${customStartDate.value}T00:00:00`)
+    const customEnd = new Date(`${customEndDate.value}T23:59:59`)
+    if (!Number.isNaN(customStart.getTime()) && !Number.isNaN(customEnd.getTime())) {
+      return { start: customStart, end: customEnd }
+    }
+  }
+
+  return null
+}
+
+const computeDistributionFromNodes = (list) => {
+  const result = { highQuality: 0, mediumQuality: 0, lowQuality: 0 }
+  list.forEach((node) => {
+    const category = node.category || (
+      Number(node.quality) >= 80 ? 'high' : Number(node.quality) >= 60 ? 'medium' : 'low'
+    )
+    if (category === 'high') result.highQuality += 1
+    else if (category === 'medium') result.mediumQuality += 1
+    else result.lowQuality += 1
+  })
+  return result
+}
+
+const computeStatsFromNodes = (list) => {
+  if (!list.length) {
+    return {
+      totalSamples: 0,
+      missingRate: 0,
+      imbalanceScore: 0,
+      noiseLevel: 0,
+      criticalWarnings: 0,
+      warnings: 0,
+      infoAlerts: 0
+    }
+  }
+
+  const totalSamples = list.reduce((sum, n) => sum + Number(n.samples || 0), 0)
+  const missingRate = list.reduce((sum, n) => sum + Number(n.missingRate || 0), 0) / list.length
+  const noiseLevel = list.reduce((sum, n) => sum + Number(n.noiseLevel || 0), 0) / list.length
+  const avgQuality = list.reduce((sum, n) => sum + Number(n.quality || 0), 0) / list.length
+  const qualityVar = list.reduce((sum, n) => {
+    const diff = Number(n.quality || 0) - avgQuality
+    return sum + diff * diff
+  }, 0) / list.length
+
+  return {
+    ...stats.value,
+    totalSamples,
+    missingRate: Number(missingRate.toFixed(2)),
+    noiseLevel: Number(noiseLevel.toFixed(2)),
+    imbalanceScore: Number((Math.sqrt(qualityVar) / 10).toFixed(2))
+  }
+}
+
+const refreshByCurrentFilters = async () => {
+  const range = getTimeWindowRange()
+  const filtered = allNodes.value.filter((node) => {
+    const q = Number(node.quality || 0)
+    const m = Number(node.missingRate || 0)
+    const n = Number(node.noiseLevel || 0)
+    if (q > qualityRange.value) return false
+    if (m > missingRange.value) return false
+    if (n > noiseRange.value) return false
+
+    if (range && node.updatedAt) {
+      const t = new Date(node.updatedAt)
+      if (!Number.isNaN(t.getTime())) {
+        if (t < range.start || t > range.end) return false
+      }
+    }
+    return true
+  })
+
+  nodes.value = filtered
+  if (selectedNode.value && !filtered.some((n) => n.nodeId === selectedNode.value.nodeId)) {
+    selectedNode.value = null
+  }
+
+  stats.value = computeStatsFromNodes(filtered)
+  await nextTick()
+  init3DHeatmap()
+  initDistributionChart(computeDistributionFromNodes(filtered))
 }
 
 const getCategoryText = (category) => {
@@ -491,9 +624,8 @@ const fetchNodes = async () => {
   try {
     const res = await getNodeQualityData()
     if (res.code === 200) {
-      nodes.value = res.data
-      await nextTick()
-      init3DHeatmap()
+      allNodes.value = Array.isArray(res.data) ? res.data : []
+      await refreshByCurrentFilters()
     }
   } catch (error) {
     console.error('获取节点数据失败', error)
@@ -564,25 +696,70 @@ const viewWarningDetail = (warning) => {
 }
 
 // 应用过滤器
-const applyFilters = () => {
-  // 实际项目中这里应该调用API并传递过滤参数
-  fetchNodes()
+const applyFilters = async () => {
+  await refreshByCurrentFilters()
+  fetchWarnings(false)
+  if (nodes.value.length === 0) {
+    alert('当前筛选条件下没有匹配节点，请放宽阈值或调整时间窗口。')
+  }
+}
+
+const hashToUnit = (text = '') => {
+  let h = 0
+  for (let i = 0; i < text.length; i += 1) {
+    h = (h * 31 + text.charCodeAt(i)) >>> 0
+  }
+  return (h % 1000) / 1000
+}
+
+const resolvePoint3D = (node, index, total) => {
+  const hasRaw =
+    Number.isFinite(Number(node.x)) &&
+    Number.isFinite(Number(node.y)) &&
+    Number.isFinite(Number(node.z))
+
+  const quality = Number(node.quality || 0)
+  const missing = Number(node.missingRate || 0)
+  const noise = Number(node.noiseLevel || 0)
+  const samples = Number(node.samples || 0)
+  const seed = hashToUnit(String(node.nodeId || node.name || index))
+  const phase = index / Math.max(total - 1, 1)
+
+  if (hasRaw) {
+    const jitter = (seed - 0.5) * 8
+    const wave = Math.sin((phase * Math.PI * 2) + seed * Math.PI) * 6
+    return [
+      Number(node.x) + jitter,
+      Number(node.y) + wave,
+      Number(node.z) + (wave * 0.6)
+    ]
+  }
+
+  const x = Math.min(100, Math.max(0, quality + (seed - 0.5) * 20))
+  const yBase = Math.min(100, Math.max(0, 100 - missing * 5))
+  const y = Math.min(100, Math.max(0, yBase + Math.sin(phase * Math.PI * 3) * 10))
+  const zBase = Math.min(100, Math.max(0, 100 - noise * 8))
+  const z = Math.min(100, Math.max(0, zBase + Math.log10(samples + 1) * 6 - 10))
+  return [x, y, z]
 }
 
 // 初始化3D热力图
 const init3DHeatmap = () => {
   const dom = document.getElementById('heatmap-3d')
-  if (!dom || nodes.value.length === 0) return
+  if (!dom) return
 
   if (heatmap3dChart) heatmap3dChart.dispose()
+  if (nodes.value.length === 0) return
   heatmap3dChart = echarts.init(dom)
 
-  const data = nodes.value.map(node => ({
+  const data = nodes.value.map((node, index) => {
+    const [x, y, z] = resolvePoint3D(node, index, nodes.value.length)
+    return ({
     name: node.name || node.nodeId,
     value: [
-      Number(node.x) || 0,
-      Number(node.y) || 0,
-      Number(node.z) || 0,
+      x,
+      y,
+      z,
       Number(node.quality) || 0,
       Number(node.samples) || 0,
       Number(node.missingRate) || 0,
@@ -592,7 +769,7 @@ const init3DHeatmap = () => {
       color: node.category === 'high' ? '#76B900' : 
              node.category === 'medium' ? '#FFB74D' : '#EF5350'
     }
-  }))
+  })})
 
   const option = {
     backgroundColor: 'transparent',
@@ -703,7 +880,7 @@ const init3DHeatmap = () => {
 
 // 初始化分布图表
 const initDistributionChart = (data) => {
-  const dom = document.getElementById('distribution-chart')
+  const dom = distributionChartRef.value
   if (!dom) return
 
   if (distributionChart) distributionChart.dispose()
@@ -833,7 +1010,6 @@ const handleResize = () => {
 onMounted(async () => {
   await fetchStats()
   await fetchNodes()
-  await fetchDistribution()
   await fetchWarnings()
 
   window.addEventListener('resize', handleResize)
